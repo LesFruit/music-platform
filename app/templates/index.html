@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }}</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>Music</h1>
+      <nav>
+        <button class="nav-btn active" data-view="library">Library</button>
+        <button class="nav-btn" data-view="playlists">Playlists</button>
+        <button class="nav-btn" data-view="generate">Create</button>
+        <button class="nav-btn" data-view="jobs">Jobs</button>
+      </nav>
+      <div class="stats" id="stats"></div>
+    </aside>
+
+    <main class="main">
+      <section id="view-library" class="view active">
+        <div class="toolbar">
+          <input id="search" placeholder="Search songs, folders..." />
+          <select id="source-filter">
+            <option value="">All Sources</option>
+            <option value="suno">Suno</option>
+            <option value="ace-step">ACE-Step</option>
+            <option value="diffrhythm">DiffRhythm</option>
+            <option value="heartmula">HeartMuLa</option>
+            <option value="stable-audio">Stable Audio</option>
+          </select>
+          <button id="refresh-library">Refresh</button>
+        </div>
+        <table>
+          <thead><tr><th>Source</th><th>Track</th><th>Path</th><th></th></tr></thead>
+          <tbody id="track-rows"></tbody>
+        </table>
+      </section>
+
+      <section id="view-playlists" class="view">
+        <div class="toolbar">
+          <input id="new-playlist-name" placeholder="New playlist name" />
+          <button id="create-playlist">Create Playlist</button>
+        </div>
+        <div class="grid-two">
+          <div>
+            <h3>Your Playlists</h3>
+            <ul id="playlist-list" class="list"></ul>
+          </div>
+          <div>
+            <h3 id="playlist-title">Playlist Tracks</h3>
+            <ul id="playlist-tracks" class="list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-generate" class="view">
+        <div class="cards">
+          <form id="gen-suno" class="card">
+            <h3>Create with Suno</h3>
+            <textarea name="prompt" required placeholder="Prompt for Suno..."></textarea>
+            <div class="row">
+              <input type="number" name="max_new_tokens" min="64" max="2048" value="256" />
+              <input type="number" step="0.1" name="guidance_scale" min="1" max="10" value="3.0" />
+            </div>
+            <button>Generate Suno</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="view-jobs" class="view">
+        <div class="toolbar">
+          <button id="refresh-jobs">Refresh Jobs</button>
+        </div>
+        <table>
+          <thead><tr><th>Status</th><th>Provider</th><th>Prompt</th><th>Updated</th><th>Detail</th></tr></thead>
+          <tbody id="job-rows"></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <footer class="player">
+    <div id="now-playing">Nothing playing</div>
+    <audio id="audio" controls></audio>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
