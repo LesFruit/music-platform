@@ -5,7 +5,7 @@ from typing import Literal
 
 
 Source = Literal["suno", "ace-step", "diffrhythm", "heartmula", "stable-audio"]
-Provider = Literal["suno"]
+Provider = Literal["suno", "musicgen"]
 
 
 class Track(BaseModel):

@@ -44,6 +44,7 @@ def health() -> dict:
         "app": settings.app_name,
         "suno_dir": settings.suno_dir,
         "suno_generate_url": settings.suno_generate_url,
+        "musicgen_generate_url": settings.musicgen_generate_url,
     }
 
 

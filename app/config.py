@@ -18,6 +18,7 @@ class Settings(BaseModel):
     stable_audio_dir: str = os.getenv("MUSIC_PLATFORM_STABLE_AUDIO_DIR", "/host/d/Music/stable-audio")
 
     suno_generate_url: str = os.getenv("SUNO_GENERATE_URL", "http://127.0.0.1:8091/generate")
+    musicgen_generate_url: str = os.getenv("MUSICGEN_GENERATE_URL", "http://100.73.6.116:8010/generate")
 
 
 settings = Settings()

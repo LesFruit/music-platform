@@ -49,10 +49,30 @@ async def _run_suno(req: GenerateRequest) -> str:
     return f"suno: {data}"
 
 
+async def _run_musicgen(req: GenerateRequest) -> str:
+    if not settings.musicgen_generate_url:
+        raise RuntimeError("MUSICGEN_GENERATE_URL is not configured")
+    payload = {
+        "prompt": req.prompt,
+        "max_new_tokens": req.max_new_tokens,
+        "guidance_scale": req.guidance_scale,
+    }
+    async with httpx.AsyncClient(timeout=1800) as client:
+        res = await client.post(settings.musicgen_generate_url, json=payload)
+        res.raise_for_status()
+        data = res.json() if res.headers.get("content-type", "").startswith("application/json") else res.text
+    return f"musicgen: {data}"
+
+
 async def run_job(job_id: str, req: GenerateRequest) -> None:
     update_job(job_id, "running")
     try:
-        detail = await _run_suno(req)
+        if req.provider == "suno":
+            detail = await _run_suno(req)
+        elif req.provider == "musicgen":
+            detail = await _run_musicgen(req)
+        else:
+            raise RuntimeError(f"Unknown provider: {req.provider}")
         update_job(job_id, "succeeded", detail)
     except Exception as exc:
         update_job(job_id, "failed", str(exc))
