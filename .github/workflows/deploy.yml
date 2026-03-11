@@ -1,0 +1,22 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, X64, tailscale-deploy]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build container
+        run: podman build -t music-platform:latest -f Containerfile .
+
+      - name: Stop existing container
+        run: podman stop music-platform || true && podman rm music-platform || true
+
+      - name: Deploy to production-6
+        run: |
+          podman save music-platform:latest | ssh root@production-6 podman load
+          ssh root@production-6 "podman stop music-platform || true; podman rm music-platform || true; podman run -d --name music-platform --restart=always -p 8090:8090 music-platform:latest"
