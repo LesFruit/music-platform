@@ -13,11 +13,12 @@ from fastapi import Request
 from app.config import settings
 from app.db import get_conn, init_db
 from app.models import CreatePlaylistRequest, GenerateRequest, PlaylistTrackRequest, TrackMetadataUpdate, UpdatePlaylistRequest, ReorderPlaylistTracksRequest
-from app.services.generation import create_job, launch_job
-from app.services.health import generate_health_report, health_report_to_dict
+from app.services.generation import create_job, launch_job, get_available_providers, auto_fallback_generation
+from app.services.health import generate_health_report, health_report_to_dict, check_provider_health
 from app.services.indexer import reindex
 from app.services.ingest import scan_and_ingest
 from app.services.library import load_library, track_by_id, search, search_suggestions
+from app.services.backfill import backfill_duration, get_backfill_status
 
 
 ALL_SOURCES = {"suno", "ace-step", "diffrhythm", "heartmula", "stable-audio", "cover-piano", "cover-orchestra"}
@@ -153,6 +154,36 @@ def add_recent_search(req: dict) -> dict:
 @app.post("/api/library/reindex")
 def do_reindex(with_duration: bool = False) -> dict:
     return reindex(with_duration=with_duration)
+
+
+@app.get("/api/admin/backfill/status")
+def backfill_status() -> dict:
+    """Get current status of metadata backfill needs.
+    
+    Returns counts of tracks missing duration and other metadata.
+    """
+    return get_backfill_status()
+
+
+@app.post("/api/admin/backfill/duration")
+def backfill_duration_endpoint(
+    source: str = "",
+    dry_run: bool = False,
+    limit: int | None = None,
+) -> dict:
+    """Backfill duration metadata for tracks missing it.
+    
+    Args:
+        source: If provided, only backfill tracks from this source
+        dry_run: If True, only report what would be done without making changes
+        limit: Maximum number of tracks to process (None for all)
+    """
+    result = backfill_duration(
+        source=source if source else None,
+        dry_run=dry_run,
+        limit=limit,
+    )
+    return result
 
 
 @app.get("/api/audio/{track_id}")
@@ -389,11 +420,53 @@ def set_metadata(track_id: str, req: TrackMetadataUpdate) -> dict:
     return {"ok": True, "track_id": track_id}
 
 
+@app.get("/api/providers")
+async def providers() -> dict:
+    """Get availability status of generation providers.
+    
+    Returns current availability status for Suno and MusicGen providers,
+    allowing UI to show/hide options based on service health.
+    """
+    from app.config import settings
+    
+    suno_health = await check_provider_health("suno", settings.suno_generate_url)
+    musicgen_health = await check_provider_health("musicgen", settings.musicgen_generate_url)
+    
+    return {
+        "providers": [
+            {
+                "name": "suno",
+                "available": suno_health.status in ("healthy", "degraded"),
+                "status": suno_health.status,
+                "error": suno_health.error,
+            },
+            {
+                "name": "musicgen",
+                "available": musicgen_health.status in ("healthy", "degraded"),
+                "status": musicgen_health.status,
+                "error": musicgen_health.error,
+            },
+        ]
+    }
+
+
 @app.post("/api/generate")
 async def generate(req: GenerateRequest) -> dict:
     job_id = create_job(req)
     launch_job(job_id, req)
     return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/api/generate/auto")
+async def generate_auto(req: GenerateRequest) -> dict:
+    """Generate with automatic fallback to available providers.
+    
+    If the requested provider is unavailable, automatically falls back
+    to the other provider if available. Returns error only if both
+    providers are unavailable.
+    """
+    result = await auto_fallback_generation(req)
+    return result
 
 
 @app.get("/api/jobs")

@@ -1,0 +1,41 @@
+services:
+  music-platform:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: music-platform
+    ports:
+      - "8090:8090"
+    environment:
+      - MUSIC_PLATFORM_PORT=8090
+      - MUSIC_PLATFORM_HOST=0.0.0.0
+      - MUSIC_PLATFORM_DB_PATH=/app/data/music_platform.sqlite3
+      # Audio source directories - mount via volumes or override with env vars
+      - MUSIC_PLATFORM_SUNO_DIR=/app/media/suno
+      - MUSIC_PLATFORM_ACESTEP_DIR=/app/media/ace-step
+      - MUSIC_PLATFORM_DIFFRHYTHM_DIR=/app/media/diffrhythm
+      - MUSIC_PLATFORM_HEARTMULA_DIR=/app/media/heartmula
+      - MUSIC_PLATFORM_STABLE_AUDIO_DIR=/app/media/stable-audio
+      - MUSIC_PLATFORM_COVERS_DIR=/app/media/covers
+      - MUSIC_PLATFORM_COVER_PIANO_DIR=/app/media/covers/cover_piano
+      - MUSIC_PLATFORM_COVER_ORCHESTRA_DIR=/app/media/covers/cover_orchestra
+      # Generation service URLs - configure for your environment
+      # - SUNO_GENERATE_URL=http://suno-wrapper:8091/generate
+      # - MUSICGEN_GENERATE_URL=http://musicgen:8010/generate
+    volumes:
+      - music-platform-data:/app/data
+      - music-platform-media:/app/media
+      # Optional: Mount specific audio source directories
+      # - /path/to/suno:/app/media/suno:ro
+      # - /path/to/ace-step:/app/media/ace-step:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  music-platform-data:
+  music-platform-media:

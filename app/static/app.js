@@ -879,6 +879,61 @@ async function loadJobs() {
   renderJobs(data.jobs);
 }
 
+async function loadProviderStatus() {
+  """Fetch and display provider availability status."""
+  try {
+    const data = await api('/api/providers');
+    const providers = data.providers || [];
+    
+    // Update status indicators
+    providers.forEach(p => {
+      const statusEl = el(`status-${p.name}`);
+      if (statusEl) {
+        const indicator = statusEl.querySelector('.status-indicator');
+        const textEl = statusEl.querySelector('.status-text');
+        
+        // Update indicator class
+        indicator.className = 'status-indicator';
+        if (p.available) {
+          indicator.classList.add('available');
+          textEl.textContent = 'Available';
+        } else if (p.status === 'not_configured') {
+          indicator.classList.add('not_configured');
+          textEl.textContent = 'Not Configured';
+        } else {
+          indicator.classList.add('unavailable');
+          textEl.textContent = p.error ? 'Error' : 'Unavailable';
+        }
+      }
+      
+      // Show/hide generation forms based on availability
+      const formEl = el(`gen-${p.name}`);
+      if (formEl) {
+        if (p.available) {
+          formEl.style.display = 'grid';
+          formEl.classList.remove('provider-unavailable');
+        } else {
+          formEl.style.display = 'none';
+          formEl.classList.add('provider-unavailable');
+        }
+      }
+    });
+    
+    // Show "no providers" message if none available
+    const anyAvailable = providers.some(p => p.available);
+    const noProvidersMsg = el('no-providers-msg');
+    if (noProvidersMsg) {
+      noProvidersMsg.style.display = anyAvailable ? 'none' : 'block';
+    }
+    
+    return providers;
+  } catch (err) {
+    console.error('Failed to load provider status:', err);
+    return [];
+  }
+}
+
+
 async function startGeneration(provider, form) {
   const payload = {
     provider,
@@ -1102,6 +1157,9 @@ async function bootstrap() {
   el('refresh-jobs').onclick = loadJobs;
   el('gen-suno').onsubmit = async (e) => { e.preventDefault(); await startGeneration('suno', e.target); };
   el('gen-musicgen').onsubmit = async (e) => { e.preventDefault(); await startGeneration('musicgen', e.target); };
+  
+  // Load provider status on startup
+  await loadProviderStatus();
 
   // Artists view handlers
   el('artist-search').oninput = loadArtists;

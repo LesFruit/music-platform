@@ -89,8 +89,20 @@
       </section>
 
       <section id="view-generate" class="view">
+        <div class="provider-status-bar" id="provider-status-bar">
+          <div class="provider-status-item" id="status-suno">
+            <span class="status-indicator"></span>
+            <span class="status-label">Suno</span>
+            <span class="status-text"></span>
+          </div>
+          <div class="provider-status-item" id="status-musicgen">
+            <span class="status-indicator"></span>
+            <span class="status-label">MusicGen</span>
+            <span class="status-text"></span>
+          </div>
+        </div>
         <div class="cards">
-          <form id="gen-suno" class="card">
+          <form id="gen-suno" class="card" style="display: none;">
             <h3>Create with Suno</h3>
             <textarea name="prompt" required placeholder="Prompt for Suno..."></textarea>
             <div class="row">
@@ -99,6 +111,20 @@
             </div>
             <button>Generate Suno</button>
           </form>
+          <form id="gen-musicgen" class="card" style="display: none;">
+            <h3>Create with MusicGen (Local GPU)</h3>
+            <textarea name="prompt" required placeholder="Prompt for MusicGen..."></textarea>
+            <div class="row">
+              <input type="number" name="max_new_tokens" min="64" max="2048" value="256" />
+              <input type="number" step="0.1" name="guidance_scale" min="1" max="10" value="3.0" />
+            </div>
+            <button>Generate MusicGen</button>
+          </form>
+          <div id="no-providers-msg" class="card" style="display: none;">
+            <h3>No Generation Providers Available</h3>
+            <p>Neither Suno nor MusicGen is currently available. Please check the status page or try again later.</p>
+            <a href="/status" class="nav-btn" style="text-decoration:none;display:inline-block;text-align:center;margin-top:10px;">View Status</a>
+          </div>
         </div>
       </section>
 

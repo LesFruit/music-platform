@@ -3,11 +3,15 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 import httpx
 
 from app.config import settings
 from app.db import get_conn
 from app.models import GenerateRequest
+
+
+ProviderStatus = Literal["available", "unavailable", "not_configured"]
 
 
 def now_iso() -> str:
@@ -118,3 +122,99 @@ async def run_job(job_id: str, req: GenerateRequest) -> None:
 
 def launch_job(job_id: str, req: GenerateRequest) -> None:
     asyncio.create_task(run_job(job_id, req))
+
+
+async def check_provider_availability(provider: str) -> tuple[ProviderStatus, str | None]:
+    """Check if a generation provider is available.
+    
+    Returns:
+        Tuple of (status, error_message)
+        - status: "available", "unavailable", or "not_configured"
+        - error_message: Description of the issue if unavailable
+    """
+    if provider == "suno":
+        url = settings.suno_generate_url
+    elif provider == "musicgen":
+        url = settings.musicgen_generate_url
+    else:
+        return "unavailable", f"Unknown provider: {provider}"
+    
+    if not url:
+        return "not_configured", f"{provider.upper()}_GENERATE_URL not configured"
+    
+    is_healthy, error_msg = await _check_service_health(url)
+    if is_healthy:
+        return "available", None
+    return "unavailable", error_msg
+
+
+async def get_available_providers() -> list[dict]:
+    """Get list of available providers with their status."""
+    providers = []
+    for name in ["suno", "musicgen"]:
+        status, error = await check_provider_availability(name)
+        providers.append({
+            "name": name,
+            "status": status,
+            "error": error,
+            "available": status == "available"
+        })
+    return providers
+
+
+async def auto_fallback_generation(req: GenerateRequest) -> dict:
+    """Attempt generation with automatic fallback between providers.
+    
+    Logic:
+    1. Check if requested provider is available
+    2. If available, use it
+    3. If unavailable, try the other provider if available
+    4. If neither available, return error
+    
+    Returns:
+        dict with job_id, status, and fallback info
+    """
+    # Check requested provider availability
+    requested_status, requested_error = await check_provider_availability(req.provider)
+    
+    if requested_status == "available":
+        # Requested provider is available, use it
+        job_id = create_job(req)
+        launch_job(job_id, req)
+        return {
+            "job_id": job_id,
+            "status": "queued",
+            "provider": req.provider,
+            "fallback": False,
+        }
+    
+    # Requested provider not available, try fallback
+    fallback_provider = "musicgen" if req.provider == "suno" else "suno"
+    fallback_status, fallback_error = await check_provider_availability(fallback_provider)
+    
+    if fallback_status == "available":
+        # Use fallback provider
+        fallback_req = GenerateRequest(
+            provider=fallback_provider,
+            prompt=req.prompt,
+            max_new_tokens=req.max_new_tokens,
+            guidance_scale=req.guidance_scale,
+        )
+        job_id = create_job(fallback_req)
+        launch_job(job_id, fallback_req)
+        return {
+            "job_id": job_id,
+            "status": "queued",
+            "provider": fallback_provider,
+            "fallback": True,
+            "original_provider": req.provider,
+            "original_error": requested_error,
+        }
+    
+    # Neither provider available
+    return {
+        "job_id": None,
+        "status": "failed",
+        "error": f"Requested provider '{req.provider}' unavailable: {requested_error}. "
+                 f"Fallback provider '{fallback_provider}' also unavailable: {fallback_error}",
+    }

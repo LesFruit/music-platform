@@ -28,7 +28,12 @@ def _track_id(source: str, rel: str) -> str:
 
 
 def _try_duration(path: Path) -> float | None:
-    """Best-effort duration via mutagen (returns None if unavailable)."""
+    """Best-effort duration extraction via mutagen or soundfile.
+    
+    Tries mutagen first (for mp3, flac, etc.), then falls back to soundfile
+    for WAV and other formats.
+    """
+    # Try mutagen first (handles mp3, flac, etc.)
     try:
         from mutagen import File as MutagenFile
         m = MutagenFile(str(path))
@@ -36,6 +41,16 @@ def _try_duration(path: Path) -> float | None:
             return round(m.info.length, 2)
     except Exception:
         pass
+    
+    # Fall back to soundfile for WAV and other formats
+    try:
+        import soundfile as sf
+        info = sf.info(str(path))
+        if info and info.duration:
+            return round(info.duration, 2)
+    except Exception:
+        pass
+    
     return None
 
 
