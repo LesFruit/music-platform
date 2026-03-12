@@ -7,31 +7,35 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.db import init_db
 from app.main import app
+from app.services.indexer import reindex
 
 
 def _configure_paths(tmp_path: Path) -> None:
     base = tmp_path / "media"
     suno = base / "suno"
-    musicgen = base / "music-gen"
     acestep = base / "ace-step"
     diffrhythm = base / "diffrhythm"
     heartmula = base / "heartmula"
     stable_audio = base / "stable-audio"
+    cover_piano = base / "covers" / "cover_piano"
+    cover_orchestra = base / "covers" / "cover_orchestra"
 
-    for directory in [suno, musicgen, acestep, diffrhythm, heartmula, stable_audio]:
+    for directory in [suno, acestep, diffrhythm, heartmula, stable_audio, cover_piano, cover_orchestra]:
         directory.mkdir(parents=True, exist_ok=True)
 
     (suno / "sample.wav").write_bytes(b"RIFFsample")
 
     settings.db_path = str(tmp_path / "test.sqlite3")
     settings.suno_dir = str(suno)
-    settings.musicgen_dir = str(musicgen)
     settings.acestep_dir = str(acestep)
     settings.diffrhythm_dir = str(diffrhythm)
     settings.heartmula_dir = str(heartmula)
     settings.stable_audio_dir = str(stable_audio)
+    settings.cover_piano_dir = str(cover_piano)
+    settings.cover_orchestra_dir = str(cover_orchestra)
 
     init_db()
+    reindex()  # Reindex to pick up the sample file
 
 
 def test_add_track_requires_existing_playlist(tmp_path: Path) -> None:
