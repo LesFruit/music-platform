@@ -12,12 +12,17 @@
       <h1>Music</h1>
       <nav>
         <button class="nav-btn active" data-view="library">Library</button>
+        <button class="nav-btn" data-view="search">Search</button>
         <button class="nav-btn" data-view="playlists">Playlists</button>
         <button class="nav-btn" data-view="generate">Create</button>
         <button class="nav-btn" data-view="jobs">Jobs</button>
         <a href="/status" class="nav-btn" style="text-decoration:none;display:inline-block;text-align:center;">Status</a>
       </nav>
       <div class="stats" id="stats"></div>
+      <div class="provider-status" id="provider-status" style="display: none;">
+        <h4>Providers</h4>
+        <div class="provider-list" id="provider-list"></div>
+      </div>
     </aside>
 
     <main class="main">
@@ -38,6 +43,32 @@
           <thead><tr><th>Source</th><th>Track</th><th>Path</th><th></th></tr></thead>
           <tbody id="track-rows"></tbody>
         </table>
+      </section>
+
+      <section id="view-search" class="view">
+        <div class="toolbar">
+          <input id="global-search" placeholder="Search tracks, artists, albums, playlists..." />
+          <select id="search-type-filter">
+            <option value="all">All Types</option>
+            <option value="tracks">Tracks</option>
+            <option value="artists">Artists</option>
+            <option value="albums">Albums</option>
+            <option value="playlists">Playlists</option>
+          </select>
+        </div>
+        <div class="search-results" id="search-results">
+          <div class="recent-searches" id="recent-searches" style="display: none;">
+            <h4>Recent Searches</h4>
+            <ul id="recent-search-list" class="list"></ul>
+          </div>
+          <div class="search-suggestions" id="search-suggestions" style="display: none;">
+            <h4>Suggestions</h4>
+            <ul id="suggestions-list" class="list"></ul>
+          </div>
+          <div class="search-results-content" id="search-results-content">
+            <p class="search-placeholder">Enter a search term to find tracks, artists, albums, and playlists.</p>
+          </div>
+        </div>
       </section>
 
       <section id="view-playlists" class="view">
@@ -83,10 +114,82 @@
     </main>
   </div>
 
-  <footer class="player">
-    <div id="now-playing">Nothing playing</div>
-    <audio id="audio" controls></audio>
+  <!-- Mini Player (Persistent at bottom) -->
+  <footer class="mini-player" id="mini-player">
+    <div class="mini-player-info" id="mini-player-info">
+      <div class="mini-player-art" id="mini-player-art">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+      </div>
+      <div class="mini-player-text">
+        <div class="mini-player-title" id="mini-player-title">Nothing playing</div>
+        <div class="mini-player-source" id="mini-player-source">-</div>
+      </div>
+    </div>
+    <div class="mini-player-controls">
+      <button class="control-btn" id="btn-prev" title="Previous">⏮</button>
+      <button class="control-btn play-btn" id="btn-play-pause" title="Play/Pause">▶</button>
+      <button class="control-btn" id="btn-next" title="Next">⏭</button>
+    </div>
+    <div class="mini-player-progress">
+      <span class="time" id="current-time">0:00</span>
+      <div class="progress-bar" id="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <span class="time" id="duration">0:00</span>
+    </div>
+    <div class="mini-player-volume">
+      <button class="control-btn" id="btn-volume">🔊</button>
+      <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="100" />
+    </div>
+    <button class="control-btn" id="btn-expand" title="Now Playing">⛶</button>
   </footer>
+
+  <!-- Full Screen Now Playing View -->
+  <div class="now-playing-overlay" id="now-playing-overlay">
+    <button class="now-playing-close" id="btn-close-overlay">✕</button>
+    <div class="now-playing-content">
+      <div class="now-playing-art-section">
+        <div class="now-playing-art" id="now-playing-art">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+        </div>
+      </div>
+      <div class="now-playing-info-section">
+        <div class="now-playing-track-info">
+          <h2 class="now-playing-title" id="now-playing-title">Nothing playing</h2>
+          <p class="now-playing-source" id="now-playing-source">-</p>
+        </div>
+        <div class="now-playing-progress-section">
+          <div class="progress-bar-large" id="progress-bar-large">
+            <div class="progress-fill-large" id="progress-fill-large"></div>
+          </div>
+          <div class="time-display">
+            <span id="overlay-current-time">0:00</span>
+            <span id="overlay-duration">0:00</span>
+          </div>
+        </div>
+        <div class="now-playing-controls">
+          <button class="control-btn-large" id="overlay-btn-shuffle" title="Shuffle">🔀</button>
+          <button class="control-btn-large" id="overlay-btn-prev" title="Previous">⏮</button>
+          <button class="control-btn-large play-btn-large" id="overlay-btn-play-pause" title="Play/Pause">▶</button>
+          <button class="control-btn-large" id="overlay-btn-next" title="Next">⏭</button>
+          <button class="control-btn-large" id="overlay-btn-repeat" title="Repeat">🔁</button>
+        </div>
+        <div class="now-playing-volume-section">
+          <span>🔊</span>
+          <input type="range" class="volume-slider-large" id="overlay-volume-slider" min="0" max="100" value="100" />
+        </div>
+      </div>
+      <div class="now-playing-queue-section">
+        <h3>Up Next</h3>
+        <ul class="queue-list" id="queue-list">
+          <li class="queue-empty">Queue is empty</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden audio element -->
+  <audio id="audio"></audio>
 
   <script src="/static/app.js"></script>
 </body>

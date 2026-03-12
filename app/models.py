@@ -19,10 +19,21 @@ class Track(BaseModel):
 
 class CreatePlaylistRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    cover_image: str | None = None
+
+
+class UpdatePlaylistRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    cover_image: str | None = None
+    is_public: bool | None = None
 
 
 class PlaylistTrackRequest(BaseModel):
     track_id: str
+
+
+class ReorderPlaylistTracksRequest(BaseModel):
+    track_ids: list[str]
 
 
 class GenerateRequest(BaseModel):

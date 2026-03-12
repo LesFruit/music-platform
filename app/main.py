@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -10,34 +12,45 @@ from fastapi import Request
 
 from app.config import settings
 from app.db import get_conn, init_db
-from app.models import CreatePlaylistRequest, GenerateRequest, PlaylistTrackRequest, TrackMetadataUpdate
-from app.services.generation import create_job, launch_job, _check_service_health
+from app.models import CreatePlaylistRequest, GenerateRequest, PlaylistTrackRequest, TrackMetadataUpdate, UpdatePlaylistRequest, ReorderPlaylistTracksRequest
+from app.services.generation import create_job, launch_job
 from app.services.health import generate_health_report, health_report_to_dict
 from app.services.indexer import reindex
 from app.services.ingest import scan_and_ingest
-from app.services.library import load_library, track_by_id
-
-app = FastAPI(title=settings.app_name, version="1.0.0")
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+from app.services.library import load_library, track_by_id, search, search_suggestions
 
 
 ALL_SOURCES = {"suno", "ace-step", "diffrhythm", "heartmula", "stable-audio", "cover-piano", "cover-orchestra"}
 
 
-@app.on_event("startup")
-def on_startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler - runs startup and shutdown code."""
+    # Startup
     init_db()
     for d in [settings.suno_dir, settings.acestep_dir,
               settings.diffrhythm_dir, settings.heartmula_dir, settings.stable_audio_dir,
               settings.cover_piano_dir, settings.cover_orchestra_dir]:
         Path(d).mkdir(parents=True, exist_ok=True)
     reindex()
+    yield
+    # Shutdown (if needed in the future)
+
+
+app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
 
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "app_name": settings.app_name})
+
+
+@app.get("/share/{share_code}", response_class=HTMLResponse)
+def shared_playlist(request: Request, share_code: str):
+    """Shared playlist view - loads the index page with JS to fetch the playlist."""
+    return templates.TemplateResponse("index.html", {"request": request, "app_name": settings.app_name, "share_code": share_code})
 
 
 @app.get("/status", response_class=HTMLResponse)
@@ -83,6 +96,60 @@ def stats() -> dict:
     return {"count": total, "size_bytes": size, "by_source": by_source}
 
 
+@app.get("/api/search")
+def search_endpoint(query: str = "", types: str = "all") -> dict:
+    """Global search across tracks, artists, albums, and playlists.
+
+    Args:
+        query: Search query string
+        types: Filter by type - "all", "tracks", "playlists", "albums", "artists" (comma-separated for multiple)
+    """
+    return search(query=query, types=types)
+
+
+@app.get("/api/search/suggestions")
+def search_suggestions_endpoint(query: str = "", limit: int = 10) -> dict:
+    """Get search suggestions for autocomplete.
+
+    Args:
+        query: Search query string
+        limit: Maximum number of suggestions (default 10)
+    """
+    suggestions = search_suggestions(query=query, limit=limit)
+    return {"suggestions": suggestions}
+
+
+# Recent searches storage (in-memory for simplicity; could be moved to DB)
+_recent_searches: list[dict] = []
+
+
+@app.get("/api/search/recent")
+def get_recent_searches(limit: int = 10) -> dict:
+    """Get recent searches."""
+    return {"recent": _recent_searches[:limit]}
+
+
+@app.post("/api/search/recent")
+def add_recent_search(req: dict) -> dict:
+    """Add a recent search.
+
+    Request body: {"query": "search term", "types": "all"}
+    """
+    global _recent_searches
+    query = req.get("query", "")
+    search_type = req.get("types", "all")
+    if not query:
+        return {"ok": False}
+
+    # Add to front, remove duplicates
+    entry = {"query": query, "types": search_type}
+    _recent_searches.insert(0, entry)
+    # Keep only last 20
+    seen = []
+    _recent_searches = [s for s in _recent_searches if s["query"].lower() not in seen and not seen.append(s["query"].lower()) and True][:20]
+    return {"ok": True}
+
+
 @app.post("/api/library/reindex")
 def do_reindex(with_duration: bool = False) -> dict:
     return reindex(with_duration=with_duration)
@@ -102,34 +169,156 @@ def audio(track_id: str):
 @app.get("/api/playlists")
 def playlists() -> dict:
     with get_conn() as conn:
-        rows = conn.execute("SELECT id, name, created_at FROM playlists ORDER BY name").fetchall()
+        rows = conn.execute(
+            "SELECT id, name, cover_image, share_code, is_public, created_at, updated_at FROM playlists ORDER BY name"
+        ).fetchall()
     return {"playlists": [dict(r) for r in rows]}
 
 
 @app.post("/api/playlists")
 def create_playlist(req: CreatePlaylistRequest) -> dict:
     with get_conn() as conn:
-        cur = conn.execute("INSERT INTO playlists (name) VALUES (?)", (req.name,))
+        cur = conn.execute(
+            "INSERT INTO playlists (name, cover_image) VALUES (?, ?)",
+            (req.name, req.cover_image),
+        )
         conn.commit()
         pid = cur.lastrowid
-    return {"id": pid, "name": req.name}
+    return {"id": pid, "name": req.name, "cover_image": req.cover_image}
 
 
 @app.get("/api/playlists/{playlist_id}")
 def playlist_detail(playlist_id: int) -> dict:
     with get_conn() as conn:
-        p = conn.execute("SELECT id, name, created_at FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+        p = conn.execute(
+            "SELECT id, name, cover_image, share_code, is_public, created_at, updated_at FROM playlists WHERE id = ?",
+            (playlist_id,),
+        ).fetchone()
         if not p:
             raise HTTPException(status_code=404, detail="playlist not found")
         rows = conn.execute(
-            "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY created_at",
+            "SELECT track_id, position FROM playlist_tracks WHERE playlist_id = ? ORDER BY position, created_at",
             (playlist_id,),
         ).fetchall()
     tracks = []
     for r in rows:
         t = track_by_id(r["track_id"])
         if t:
-            tracks.append(t.model_dump())
+            track_dict = t.model_dump()
+            track_dict["position"] = r["position"]
+            tracks.append(track_dict)
+    return {"playlist": dict(p), "tracks": tracks}
+
+
+@app.put("/api/playlists/{playlist_id}")
+def update_playlist(playlist_id: int, req: UpdatePlaylistRequest) -> dict:
+    with get_conn() as conn:
+        p = conn.execute("SELECT id FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+        if not p:
+            raise HTTPException(status_code=404, detail="playlist not found")
+
+        updates = []
+        values = []
+        if req.name is not None:
+            updates.append("name = ?")
+            values.append(req.name)
+        if req.cover_image is not None:
+            updates.append("cover_image = ?")
+            values.append(req.cover_image)
+        if req.is_public is not None:
+            updates.append("is_public = ?")
+            values.append(1 if req.is_public else 0)
+            if req.is_public:
+                # Generate share code if making public and none exists
+                existing = conn.execute("SELECT share_code FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+                if not existing or not existing["share_code"]:
+                    share_code = secrets.token_urlsafe(8)
+                    updates.append("share_code = ?")
+                    values.append(share_code)
+
+        if updates:
+            updates.append("updated_at = datetime('now')")
+            values.append(playlist_id)
+            conn.execute(f"UPDATE playlists SET {', '.join(updates)} WHERE id = ?", values)
+            conn.commit()
+
+        p = conn.execute(
+            "SELECT id, name, cover_image, share_code, is_public, created_at, updated_at FROM playlists WHERE id = ?",
+            (playlist_id,),
+        ).fetchone()
+    return {"playlist": dict(p)}
+
+
+@app.delete("/api/playlists/{playlist_id}")
+def delete_playlist(playlist_id: int) -> dict:
+    with get_conn() as conn:
+        p = conn.execute("SELECT id FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+        if not p:
+            raise HTTPException(status_code=404, detail="playlist not found")
+        conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+        conn.commit()
+    return {"ok": True}
+
+
+@app.post("/api/playlists/{playlist_id}/tracks/reorder")
+def reorder_playlist_tracks(playlist_id: int, req: ReorderPlaylistTracksRequest) -> dict:
+    with get_conn() as conn:
+        p = conn.execute("SELECT id FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+        if not p:
+            raise HTTPException(status_code=404, detail="playlist not found")
+
+        # Update positions for all tracks in the request
+        for position, track_id in enumerate(req.track_ids):
+            conn.execute(
+                "UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND track_id = ?",
+                (position, playlist_id, track_id),
+            )
+        conn.commit()
+    return {"ok": True}
+
+
+@app.post("/api/playlists/{playlist_id}/share")
+def share_playlist(playlist_id: int) -> dict:
+    with get_conn() as conn:
+        p = conn.execute("SELECT id, share_code, is_public FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+        if not p:
+            raise HTTPException(status_code=404, detail="playlist not found")
+
+        if not p["share_code"]:
+            share_code = secrets.token_urlsafe(8)
+            conn.execute(
+                "UPDATE playlists SET share_code = ?, is_public = 1, updated_at = datetime('now') WHERE id = ?",
+                (share_code, playlist_id),
+            )
+            conn.commit()
+            p = conn.execute("SELECT id, share_code, is_public FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+
+    return {"share_code": p["share_code"], "is_public": bool(p["is_public"])}
+
+
+@app.get("/api/playlists/shared/{share_code}")
+def get_shared_playlist(share_code: str) -> dict:
+    with get_conn() as conn:
+        p = conn.execute(
+            "SELECT id, name, cover_image, share_code, is_public, created_at FROM playlists WHERE share_code = ? AND is_public = 1",
+            (share_code,),
+        ).fetchone()
+        if not p:
+            raise HTTPException(status_code=404, detail="shared playlist not found")
+
+        rows = conn.execute(
+            "SELECT track_id, position FROM playlist_tracks WHERE playlist_id = ? ORDER BY position, created_at",
+            (p["id"],),
+        ).fetchall()
+
+    tracks = []
+    for r in rows:
+        t = track_by_id(r["track_id"])
+        if t:
+            track_dict = t.model_dump()
+            track_dict["position"] = r["position"]
+            tracks.append(track_dict)
+
     return {"playlist": dict(p), "tracks": tracks}
 
 
@@ -144,9 +333,17 @@ def playlist_add_track(playlist_id: int, req: PlaylistTrackRequest) -> dict:
         ).fetchone()
         if not playlist:
             raise HTTPException(status_code=404, detail="playlist not found")
+
+        # Get max position in playlist
+        max_pos = conn.execute(
+            "SELECT MAX(position) as max_pos FROM playlist_tracks WHERE playlist_id = ?",
+            (playlist_id,),
+        ).fetchone()
+        next_pos = (max_pos["max_pos"] or 0) + 1
+
         conn.execute(
-            "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id) VALUES (?, ?)",
-            (playlist_id, req.track_id),
+            "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+            (playlist_id, req.track_id, next_pos),
         )
         conn.commit()
     return {"ok": True}

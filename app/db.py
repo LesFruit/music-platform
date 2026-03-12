@@ -11,12 +11,17 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS playlists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  cover_image TEXT,
+  share_code TEXT UNIQUE,
+  is_public INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS playlist_tracks (
   playlist_id INTEGER NOT NULL,
   track_id TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (playlist_id, track_id),
   FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
@@ -83,4 +88,26 @@ def get_conn():
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        # Migrate existing playlists table if needed
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN cover_image TEXT")
+        except Exception:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN share_code TEXT UNIQUE")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))")
+        except Exception:
+            pass
+        # Migrate playlist_tracks to add position if needed
+        try:
+            conn.execute("ALTER TABLE playlist_tracks ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
         conn.commit()

@@ -55,7 +55,7 @@ async def _check_service_health(url: str, timeout: float = 5.0) -> tuple[bool, s
     except httpx.ConnectError:
         return False, f"Service not reachable at {url} - ensure the service is running"
     except httpx.TimeoutException:
-        return False, f"Health check timed out - service may be overloaded"
+        return False, "Health check timed out - service may be overloaded"
     except Exception as e:
         return False, f"Health check error: {type(e).__name__}: {e}"
 
