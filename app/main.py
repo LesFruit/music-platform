@@ -11,8 +11,10 @@ from fastapi import Request
 from app.config import settings
 from app.db import get_conn, init_db
 from app.models import CreatePlaylistRequest, GenerateRequest, PlaylistTrackRequest, TrackMetadataUpdate
-from app.services.generation import create_job, launch_job
+from app.services.generation import create_job, launch_job, _check_service_health
+from app.services.health import generate_health_report, health_report_to_dict
 from app.services.indexer import reindex
+from app.services.ingest import scan_and_ingest
 from app.services.library import load_library, track_by_id
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
@@ -20,14 +22,15 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
-ALL_SOURCES = {"suno", "ace-step", "diffrhythm", "heartmula", "stable-audio"}
+ALL_SOURCES = {"suno", "ace-step", "diffrhythm", "heartmula", "stable-audio", "cover-piano", "cover-orchestra"}
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
     for d in [settings.suno_dir, settings.acestep_dir,
-              settings.diffrhythm_dir, settings.heartmula_dir, settings.stable_audio_dir]:
+              settings.diffrhythm_dir, settings.heartmula_dir, settings.stable_audio_dir,
+              settings.cover_piano_dir, settings.cover_orchestra_dir]:
         Path(d).mkdir(parents=True, exist_ok=True)
     reindex()
 
@@ -37,15 +40,28 @@ def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "app_name": settings.app_name})
 
 
+@app.get("/status", response_class=HTMLResponse)
+def status_page(request: Request):
+    """Operator-facing status dashboard for health and catalog metrics."""
+    return templates.TemplateResponse("status.html", {"request": request, "app_name": settings.app_name})
+
+
 @app.get("/api/health")
-def health() -> dict:
-    return {
-        "ok": True,
-        "app": settings.app_name,
-        "suno_dir": settings.suno_dir,
-        "suno_generate_url": settings.suno_generate_url,
-        "musicgen_generate_url": settings.musicgen_generate_url,
-    }
+async def health() -> dict:
+    """Health endpoint with dependency and catalog quality metrics.
+    
+    Returns comprehensive health status including:
+    - Upstream generation provider reachability (suno, musicgen)
+    - Catalog quality metrics (missing files, missing duration)
+    - Overall service health status (healthy/degraded/unhealthy)
+    
+    Status thresholds:
+    - unhealthy: Any provider unreachable OR >10% tracks with missing files
+    - degraded: Any provider slow/non-200 OR any tracks missing files OR >20% missing duration
+    - healthy: All providers healthy and catalog quality acceptable
+    """
+    report = await generate_health_report()
+    return health_report_to_dict(report)
 
 
 @app.get("/api/library/tracks")
@@ -202,3 +218,22 @@ def job(job_id: str) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail="job not found")
     return dict(row)
+
+
+@app.post("/api/ingest")
+def ingest(output_dir: str = "", dry_run: bool = False) -> dict:
+    """Ingest music-gen outputs into the catalog.
+    
+    Args:
+        output_dir: Path to music-gen output directory (defaults to settings.musicgen_output_dir)
+        dry_run: If True, only report what would be done
+    """
+    import os
+    target_dir = output_dir or settings.musicgen_output_dir
+    
+    # Resolve relative paths from project root
+    if not os.path.isabs(target_dir):
+        target_dir = str(Path(__file__).parent.parent / target_dir)
+    
+    stats = scan_and_ingest(target_dir, dry_run=dry_run)
+    return {"ok": stats["failed"] == 0, "dry_run": dry_run, "stats": stats}

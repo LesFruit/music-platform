@@ -18,6 +18,8 @@ SOURCES: list[tuple[str, str]] = [
     (settings.diffrhythm_dir, "diffrhythm"),
     (settings.heartmula_dir, "heartmula"),
     (settings.stable_audio_dir, "stable-audio"),
+    (settings.cover_piano_dir, "cover-piano"),
+    (settings.cover_orchestra_dir, "cover-orchestra"),
 ]
 
 

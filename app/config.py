@@ -16,6 +16,14 @@ class Settings(BaseModel):
     diffrhythm_dir: str = os.getenv("MUSIC_PLATFORM_DIFFRHYTHM_DIR", "/host/d/Music/diffrhythm")
     heartmula_dir: str = os.getenv("MUSIC_PLATFORM_HEARTMULA_DIR", "/host/d/Music/heartmula")
     stable_audio_dir: str = os.getenv("MUSIC_PLATFORM_STABLE_AUDIO_DIR", "/host/d/Music/stable-audio")
+    
+    # Cover outputs from music-gen pipeline
+    covers_dir: str = os.getenv("MUSIC_PLATFORM_COVERS_DIR", "/host/d/Music/covers")
+    cover_piano_dir: str = os.getenv("MUSIC_PLATFORM_COVER_PIANO_DIR", "/host/d/Music/covers/cover_piano")
+    cover_orchestra_dir: str = os.getenv("MUSIC_PLATFORM_COVER_ORCHESTRA_DIR", "/host/d/Music/covers/cover_orchestra")
+    
+    # Music-gen output directory for ingest
+    musicgen_output_dir: str = os.getenv("MUSICGEN_OUTPUT_DIR", "../music-gen/data/out")
 
     suno_generate_url: str = os.getenv("SUNO_GENERATE_URL", "http://127.0.0.1:8091/generate")
     musicgen_generate_url: str = os.getenv("MUSICGEN_GENERATE_URL", "http://100.73.6.116:8010/generate")
